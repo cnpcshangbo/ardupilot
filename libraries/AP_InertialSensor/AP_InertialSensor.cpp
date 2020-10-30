@@ -62,8 +62,6 @@ extern const AP_HAL::HAL& hal;
 #define MPU_FIFO_FASTSAMPLE_DEFAULT 0
 #endif
 
-#define SAMPLE_UNIT 1
-
 #define GYRO_INIT_MAX_DIFF_DPS 0.1f
 
 // Class level parameters
@@ -814,8 +812,9 @@ AP_InertialSensor::detect_backends(void)
     // IMUs defined by IMU lines in hwdef.dat
     HAL_INS_PROBE_LIST;
 #elif CONFIG_HAL_BOARD == HAL_BOARD_SITL
-    ADD_BACKEND(AP_InertialSensor_SITL::detect(*this, INS_SITL_SENSOR_A));
-    ADD_BACKEND(AP_InertialSensor_SITL::detect(*this, INS_SITL_SENSOR_B));
+    for (uint8_t i=0; i<AP::sitl()->imu_count; i++) {
+        ADD_BACKEND(AP_InertialSensor_SITL::detect(*this, i==1?INS_SITL_SENSOR_B:INS_SITL_SENSOR_A));
+    }
 #elif HAL_INS_DEFAULT == HAL_INS_HIL
     ADD_BACKEND(AP_InertialSensor_HIL::detect(*this));
 #elif AP_FEATURE_BOARD_DETECT

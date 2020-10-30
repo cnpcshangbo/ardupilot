@@ -30,6 +30,7 @@ public:
 
     friend class Mode;
     friend class ModeAuto;
+    friend class ModeRTL;
     friend class ModeAvoidADSB;
     friend class ModeGuided;
     friend class ModeQHover;
@@ -94,6 +95,7 @@ public:
     bool in_vtol_mode(void) const;
     bool in_vtol_posvel_mode(void) const;
     void update_throttle_hover();
+    bool show_vtol_view() const;
 
     // vtol help for is_flying()
     bool is_flying(void);
@@ -128,6 +130,9 @@ public:
     // check if we have completed transition to fixed wing
     bool tailsitter_transition_fw_complete(void);
 
+    // return true if we are a tailsitter in FW flight
+    bool is_tailsitter_in_fw_flight(void) const;
+
     // check if we have completed transition to vtol
     bool tailsitter_transition_vtol_complete(void) const;
 
@@ -157,6 +162,7 @@ public:
         int16_t  climb_rate;
         float    throttle_mix;
         float    speed_scaler;
+        uint8_t  transition_state;
     };
 
     MAV_TYPE get_mav_type(void) const;
@@ -194,7 +200,7 @@ private:
      // air mode state: OFF, ON
     AirMode air_mode;
 
-   // check for quadplane assistance needed
+    // check for quadplane assistance needed
     bool assistance_needed(float aspeed, bool have_airspeed);
 
     // check if it is safe to provide assistance
@@ -563,6 +569,9 @@ private:
         OPTION_Q_ASSIST_FORCE_ENABLE=(1<<7),
         OPTION_TAILSIT_Q_ASSIST_MOTORS_ONLY=(1<<8),
         OPTION_AIRMODE=(1<<9),
+        OPTION_DISARMED_TILT=(1<<10),
+        OPTION_DELAY_ARMING=(1<<11),
+        OPTION_DISABLE_SYNTHETIC_AIRSPEED_ASSIST=(1<<12),
     };
 
     AP_Float takeoff_failure_scalar;
@@ -571,6 +580,11 @@ private:
     uint32_t takeoff_time_limit_ms;
 
     float last_land_final_agl;
+
+
+    // oneshot with duration ARMING_DELAY_MS used by quadplane to delay spoolup after arming:
+    // ignored unless OPTION_DELAY_ARMING or OPTION_TILT_DISARMED is set
+    bool delay_arming;
 
     /*
       return true if current mission item is a vtol takeoff

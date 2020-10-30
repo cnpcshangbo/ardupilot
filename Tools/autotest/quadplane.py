@@ -104,7 +104,7 @@ class AutoTestQuadPlane(AutoTest):
         """When disarmed, motor PWM will drop to min_pwm"""
         min_pwm = self.get_parameter("Q_THR_MIN_PWM")
 
-        self.progress("Verify Motor1 is ast min_pwm when disarmed")
+        self.progress("Verify Motor1 is at min_pwm when disarmed")
         self.wait_servo_channel_value(5, min_pwm, comparator=operator.eq)
 
         """set Q_OPTIONS bit AIRMODE"""
@@ -114,7 +114,7 @@ class AutoTestQuadPlane(AutoTest):
         armdisarm_option = 41
         arm_ch = 8
         self.set_parameter("RC%d_OPTION" % arm_ch, armdisarm_option)
-        self.progress("configured RC%d as ARMDISARM switch" % arm_ch)
+        self.progress("Configured RC%d as ARMDISARM switch" % arm_ch)
 
         """arm with GCS, record Motor1 SPIN_ARM PWM output and disarm"""
         spool_delay = self.get_parameter("Q_M_SPOOL_TIME") + 0.25
@@ -143,18 +143,22 @@ class AutoTestQuadPlane(AutoTest):
             self.progress("Testing %s mode" % mode)
             self.change_mode(mode)
             self.zero_throttle()
-            self.progress("arming with switch at zero throttle")
+            self.progress("Arming with switch at zero throttle")
             self.arm_motors_with_switch(arm_ch)
             self.progress("Waiting for Motor1 to speed up")
             self.wait_servo_channel_value(5, spin_min_pwm, comparator=operator.ge)
 
-            self.progress("disarming with switch")
+            self.progress("Verify that rudder disarm is disabled")
+            if self.disarm_motors_with_rc_input():
+                raise NotAchievedException("Rudder disarm not disabled")
+
+            self.progress("Disarming with switch")
             self.disarm_motors_with_switch(arm_ch)
             self.progress("Waiting for Motor1 to stop")
             self.wait_servo_channel_value(5, min_pwm, comparator=operator.le)
             self.wait_ready_to_arm()
 
-        self.start_subtest("verify that arming with switch does not spin motors in other modes")
+        self.start_subtest("Verify that arming with switch does not spin motors in other modes")
         # introduce a large attitude error to verify that stabilization is not active
         ahrs_trim_x = self.get_parameter("AHRS_TRIM_X")
         self.set_parameter("AHRS_TRIM_X", math.radians(-60))
@@ -164,7 +168,7 @@ class AutoTestQuadPlane(AutoTest):
             self.progress("Testing %s mode" % mode)
             self.change_mode(mode)
             self.zero_throttle()
-            self.progress("arming with switch at zero throttle")
+            self.progress("Arming with switch at zero throttle")
             self.arm_motors_with_switch(arm_ch)
             self.progress("Waiting for Motor1 to (not) speed up")
             self.delay_sim_time(spool_delay)
@@ -173,7 +177,7 @@ class AutoTestQuadPlane(AutoTest):
             self.wait_servo_channel_value(7, spin_arm_pwm, comparator=operator.le)
             self.wait_servo_channel_value(8, spin_arm_pwm, comparator=operator.le)
 
-            self.progress("disarming with switch")
+            self.progress("Disarming with switch")
             self.disarm_motors_with_switch(arm_ch)
             self.progress("Waiting for Motor1 to stop")
             self.wait_servo_channel_value(5, min_pwm, comparator=operator.le)
@@ -190,15 +194,15 @@ class AutoTestQuadPlane(AutoTest):
             self.progress("Testing %s mode" % mode)
             self.change_mode(mode)
             self.zero_throttle()
-            self.progress("arming with GCS at zero throttle")
+            self.progress("Arming with GCS at zero throttle")
             self.arm_vehicle()
 
-            self.progress("turn airmode on with auxswitch")
+            self.progress("Turn airmode on with auxswitch")
             self.set_rc(7, 2000)
             self.progress("Waiting for Motor1 to speed up")
             self.wait_servo_channel_value(5, spin_min_pwm, comparator=operator.ge)
 
-            self.progress("turn airmode off with auxswitch")
+            self.progress("Turn airmode off with auxswitch")
             self.set_rc(7, 1000)
             self.progress("Waiting for Motor1 to slow down")
             self.wait_servo_channel_value(5, spin_arm_pwm, comparator=operator.le)
@@ -210,19 +214,19 @@ class AutoTestQuadPlane(AutoTest):
             self.progress("Testing %s mode" % mode)
             self.change_mode(mode)
             self.zero_throttle()
-            self.progress("arming with GCS at zero throttle")
+            self.progress("Arming with GCS at zero throttle")
             self.arm_vehicle()
 
-            self.progress("turn airmode on with auxswitch")
+            self.progress("Turn airmode on with auxswitch")
             self.set_rc(7, 2000)
             self.progress("Waiting for Motor1 to speed up")
             self.wait_servo_channel_value(5, spin_min_pwm, comparator=operator.ge)
 
-            self.progress("disarm/rearm with GCS")
+            self.progress("Disarm/rearm with GCS")
             self.disarm_vehicle()
             self.arm_vehicle()
 
-            self.progress("verify that airmode is still on")
+            self.progress("Verify that airmode is still on")
             self.wait_servo_channel_value(5, spin_min_pwm, comparator=operator.ge)
             self.disarm_vehicle()
             self.wait_ready_to_arm()
@@ -407,9 +411,9 @@ class AutoTestQuadPlane(AutoTest):
         freq = psd["F"][numpy.argmax(psd["X"][sminhz:smaxhz]) + sminhz]
         peakdb = numpy.amax(psd["X"][sminhz:smaxhz])
         if peakdb < dblevel or (peakhz is not None and abs(freq - peakhz) / peakhz > 0.05):
-            raise NotAchievedException("Did not detect a motor peak, found %fHz at %fdB" % (freq, peakdb))
+            raise NotAchievedException("No motor peak, found %fHz at %fdB" % (freq, peakdb))
         else:
-            self.progress("Detected motor peak at %fHz, throttle %f%%, %fdB" % (freq, vfr_hud.throttle, peakdb))
+            self.progress("motor peak %fHz, thr %f%%, %fdB" % (freq, vfr_hud.throttle, peakdb))
 
         # we have a peak make sure that the FFT detected something close
         # logging is at 10Hz
@@ -508,10 +512,11 @@ class AutoTestQuadPlane(AutoTest):
             self.do_RTL()
             psd = self.mavfft_fttd(1, 0, tstart * 1.0e6, tend * 1.0e6)
             freq = psd["F"][numpy.argmax(psd["X"][ignore_bins:]) + ignore_bins]
-            if numpy.amax(psd["X"][ignore_bins:]) < -10:
-                self.progress("Did not detect a motor peak, found %f at %f dB" % (freq, numpy.amax(psd["X"][ignore_bins:])))
+            peakdB = numpy.amax(psd["X"][ignore_bins:])
+            if peakdB < -10:
+                self.progress("No motor peak, %f at %f dB" % (freq, peakdB))
             else:
-                raise NotAchievedException("Detected motor peak at %f Hz" % (freq))
+                raise NotAchievedException("Detected peak at %f Hz of %.2f dB" % (freq, peakdB))
 
             # Step 4: take off as a copter land as a plane, make sure we track
             self.progress("Flying with gyro FFT - vtol to plane")
@@ -584,7 +589,12 @@ class AutoTestQuadPlane(AutoTest):
         self.takeoff(10, mode="QHOVER")
         self.set_rc(3, 1800)
         self.change_mode("FBWA")
+
+        # disable stall prevention so roll angle is not limited
+        self.set_parameter("STALL_PREVENTION", 0)
+
         thr_min_pwm = self.get_parameter("Q_THR_MIN_PWM")
+        lim_roll_deg = self.get_parameter("LIM_ROLL_CD") * 0.01
         self.progress("Waiting for motors to stop (transition completion)")
         self.wait_servo_channel_value(5,
                                       thr_min_pwm,
@@ -606,12 +616,12 @@ class AutoTestQuadPlane(AutoTest):
                                       thr_min_pwm,
                                       timeout=30,
                                       comparator=operator.eq)
-        self.set_rc(3, 1500)
+        self.set_rc(3, 1300)
 
         self.context_push()
-        self.progress("Rolling over hard")
+        self.progress("Rolling over to %.0f degrees" % -lim_roll_deg)
         self.set_rc(1, 1000)
-        self.wait_roll(-65, 5)
+        self.wait_roll(-lim_roll_deg, 5)
         self.progress("Killing servo outputs to force qassist to help")
         self.set_parameter("SERVO1_MIN", 1480)
         self.set_parameter("SERVO1_MAX", 1480)
@@ -620,12 +630,11 @@ class AutoTestQuadPlane(AutoTest):
         self.set_rc(1, 2000)
         self.progress("Waiting for qassist (angle) to kick in")
         self.wait_servo_channel_value(5, 1100, timeout=30, comparator=operator.gt)
-        self.wait_roll(85, 5)
+        self.wait_roll(lim_roll_deg, 5)
         self.context_pop()
-
+        self.set_rc(1, 1500)
+        self.set_parameter("Q_RTL_MODE", 1)
         self.change_mode("RTL")
-        self.delay_sim_time(20)
-        self.change_mode("QRTL")
         self.wait_disarmed(timeout=300)
 
     def tests(self):

@@ -96,6 +96,7 @@ void RC_Channel_Copter::init_aux_function(const aux_func_t ch_option, const AuxS
     case AUX_FUNC::ZIGZAG:
     case AUX_FUNC::ZIGZAG_Auto:
     case AUX_FUNC::ZIGZAG_SaveWP:
+    case AUX_FUNC::ACRO:
         break;
     case AUX_FUNC::ACRO_TRAINER:
     case AUX_FUNC::ATTCON_ACCEL_LIM:
@@ -516,6 +517,13 @@ void RC_Channel_Copter::do_aux_function(const aux_func_t ch_option, const AuxSwi
 
         case AUX_FUNC::ALTHOLD:
             do_aux_function_change_mode(Mode::Number::ALT_HOLD, ch_flag);
+            break;
+
+
+        case AUX_FUNC::ACRO:
+#if MODE_ACRO_ENABLED == ENABLED
+            do_aux_function_change_mode(Mode::Number::ACRO, ch_flag);
+#endif
             break;
 
         case AUX_FUNC::FLOWHOLD:

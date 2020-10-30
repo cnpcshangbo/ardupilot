@@ -180,6 +180,41 @@ bool Rover::set_steering_and_throttle(float steering, float throttle)
     return true;
 }
 
+// get control output (for use in scripting)
+// returns true on success and control_value is set to a value in the range -1 to +1
+bool Rover::get_control_output(AP_Vehicle::ControlOutput control_output, float &control_value)
+{
+    switch (control_output) {
+    case AP_Vehicle::ControlOutput::Roll:
+        control_value = constrain_float(g2.motors.get_roll(), -1.0f, 1.0f);
+        return true;
+    case AP_Vehicle::ControlOutput::Pitch:
+        control_value = constrain_float(g2.motors.get_pitch(), -1.0f, 1.0f);
+        return true;
+    case AP_Vehicle::ControlOutput::Walking_Height:
+        control_value = constrain_float(g2.motors.get_walking_height(), -1.0f, 1.0f);
+        return true;    
+    case AP_Vehicle::ControlOutput::Throttle:
+        control_value = constrain_float(g2.motors.get_throttle() / 100.0f, -1.0f, 1.0f);
+        return true;
+    case AP_Vehicle::ControlOutput::Yaw:
+        control_value = constrain_float(g2.motors.get_steering() / 4500.0f, -1.0f, 1.0f);
+        return true;
+    case AP_Vehicle::ControlOutput::Lateral:
+        control_value = constrain_float(g2.motors.get_lateral() / 100.0f, -1.0f, 1.0f);
+        return true;
+    case AP_Vehicle::ControlOutput::MainSail:
+        control_value = constrain_float(g2.motors.get_mainsail() / 100.0f, -1.0f, 1.0f);
+        return true;
+    case AP_Vehicle::ControlOutput::WingSail:
+        control_value = constrain_float(g2.motors.get_wingsail() / 100.0f, -1.0f, 1.0f);
+        return true;
+    default:
+        return false;
+    }
+    return false;
+}
+
 #if STATS_ENABLED == ENABLED
 /*
   update AP_Stats

@@ -22,8 +22,8 @@ void Copter::init_ardupilot()
 #endif
 
     BoardConfig.init();
-#if HAL_WITH_UAVCAN
-    BoardConfig_CAN.init();
+#if HAL_MAX_CAN_PROTOCOL_DRIVERS
+    can_mgr.init();
 #endif
 
     // init cargo gripper
@@ -223,8 +223,6 @@ void Copter::init_ardupilot()
     // disable safety if requested
     BoardConfig.init_safety();
 
-    hal.console->printf("\nReady to FLY ");
-
     // flag that initialisation has completed
     ap.initialised = true;
 }
@@ -327,11 +325,11 @@ bool Copter::position_ok() const
     }
 
     // check ekf position estimate
-    return (ekf_position_ok() || optflow_position_ok());
+    return (ekf_has_absolute_position() || ekf_has_relative_position());
 }
 
-// ekf_position_ok - returns true if the ekf claims it's horizontal absolute position estimate is ok and home position is set
-bool Copter::ekf_position_ok() const
+// ekf_has_absolute_position - returns true if the EKF can provide an absolute WGS-84 position estimate
+bool Copter::ekf_has_absolute_position() const
 {
     if (!ahrs.have_inertial_nav()) {
         // do not allow navigation with dcm position
@@ -350,8 +348,8 @@ bool Copter::ekf_position_ok() const
     }
 }
 
-// optflow_position_ok - returns true if optical flow based position estimate is ok
-bool Copter::optflow_position_ok() const
+// ekf_has_relative_position - returns true if the EKF can provide a position estimate relative to it's starting position
+bool Copter::ekf_has_relative_position() const
 {
     // return immediately if EKF not used
     if (!ahrs.have_inertial_nav()) {
@@ -383,6 +381,21 @@ bool Copter::optflow_position_ok() const
     } else {
         return (filt_status.flags.horiz_pos_rel && !filt_status.flags.const_pos_mode);
     }
+}
+
+// returns true if the ekf has a good altitude estimate (required for modes which do AltHold)
+bool Copter::ekf_alt_ok() const
+{
+    if (!ahrs.have_inertial_nav()) {
+        // do not allow alt control with only dcm
+        return false;
+    }
+
+    // with EKF use filter status and ekf check
+    nav_filter_status filt_status = inertial_nav.get_filter_status();
+
+    // require both vertical velocity and position
+    return (filt_status.flags.vert_vel && filt_status.flags.vert_pos);
 }
 
 // update_auto_armed - update status of auto_armed flag

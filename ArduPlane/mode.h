@@ -4,6 +4,9 @@
 #include <AP_Common/Location.h>
 #include <stdint.h>
 #include <AP_Common/Location.h>
+#include <AP_Soaring/AP_Soaring.h>
+#include <AP_ADSB/AP_ADSB.h>
+#include <AP_Vehicle/ModeReason.h>
 
 class Mode
 {
@@ -39,6 +42,7 @@ public:
         QRTL          = 21,
         QAUTOTUNE     = 22,
         QACRO         = 23,
+        THERMAL       = 24,
     };
 
     // Constructor
@@ -68,11 +72,16 @@ public:
 
     // true for all q modes
     virtual bool is_vtol_mode() const { return false; }
-    virtual bool is_vtol_man_throttle() const { return false; }
+    virtual bool is_vtol_man_throttle() const;
     virtual bool is_vtol_man_mode() const { return false; }
+    // guided or adsb mode
+    virtual bool is_guided_mode() const { return false; }
 
     // true if mode can have terrain following disabled by switch
     virtual bool allows_terrain_disable() const { return false; }
+
+    // subclasses override this if they require navigation.
+    virtual void navigate() { return; }
 
 protected:
 
@@ -111,6 +120,8 @@ public:
     // methods that affect movement of the vehicle in this mode
     void update() override;
 
+    void navigate() override;
+
 protected:
 
     bool _enter() override;
@@ -146,6 +157,10 @@ public:
     // methods that affect movement of the vehicle in this mode
     void update() override;
 
+    void navigate() override;
+
+    virtual bool is_guided_mode() const override { return true; }
+
 protected:
 
     bool _enter() override;
@@ -177,6 +192,8 @@ public:
 
     // methods that affect movement of the vehicle in this mode
     void update() override;
+
+    void navigate() override;
 
     bool isHeadingLinedUp(const Location loiterCenterLoc, const Location targetLoc);
     bool isHeadingLinedUp_cd(const int32_t bearing_cd);
@@ -214,6 +231,8 @@ public:
 
     // methods that affect movement of the vehicle in this mode
     void update() override;
+
+    void navigate() override;
 
 protected:
 
@@ -316,11 +335,20 @@ public:
     // methods that affect movement of the vehicle in this mode
     void update() override;
 
+    void navigate() override;
+
+    bool get_target_heading_cd(int32_t &target_heading);
+
 protected:
 
     bool _enter() override;
+
+    bool locked_heading;
+    int32_t locked_heading_cd;
+    uint32_t lock_timer_ms;
 };
 
+#if HAL_ADSB_ENABLED
 class ModeAvoidADSB : public Mode
 {
 public:
@@ -332,10 +360,15 @@ public:
     // methods that affect movement of the vehicle in this mode
     void update() override;
 
+    void navigate() override;
+
+    virtual bool is_guided_mode() const override { return true; }
+
 protected:
 
     bool _enter() override;
 };
+#endif
 
 class ModeQStabilize : public Mode
 {
@@ -485,6 +518,8 @@ public:
     // methods that affect movement of the vehicle in this mode
     void update() override;
 
+    void navigate() override;
+
     // var_info for holding parameter information
     static const struct AP_Param::GroupInfo var_info[];
     
@@ -499,3 +534,31 @@ protected:
 
     bool _enter() override;
 };
+
+#if HAL_SOARING_ENABLED
+
+class ModeThermal: public Mode
+{
+public:
+
+    Number mode_number() const override { return Number::THERMAL; }
+    const char *name() const override { return "THERMAL"; }
+    const char *name4() const override { return "THML"; }
+
+    // methods that affect movement of the vehicle in this mode
+    void update() override;
+
+    // Update thermal tracking and exiting logic.
+    void update_soaring();
+
+    void navigate() override;
+
+protected:
+
+    bool exit_heading_aligned() const;
+    void restore_mode(const char *reason, ModeReason modereason);
+
+    bool _enter() override;
+};
+
+#endif

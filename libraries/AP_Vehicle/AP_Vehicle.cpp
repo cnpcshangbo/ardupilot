@@ -3,6 +3,7 @@
 #include <AP_BLHeli/AP_BLHeli.h>
 #include <AP_Common/AP_FWVersion.h>
 #include <AP_Arming/AP_Arming.h>
+#include <AP_Frsky_Telem/AP_Frsky_Parameters.h>
 
 #define SCHED_TASK(func, rate_hz, max_time_micros) SCHED_TASK_CLASS(AP_Vehicle, &vehicle, func, rate_hz, max_time_micros)
 
@@ -27,16 +28,27 @@ const AP_Param::GroupInfo AP_Vehicle::var_info[] = {
     // @Path: ../AP_VisualOdom/AP_VisualOdom.cpp
     AP_SUBGROUPINFO(visual_odom, "VISO",  3, AP_Vehicle, AP_VisualOdom),
 #endif
-
     // @Group: VTX_
     // @Path: ../AP_RCTelemetry/AP_VideoTX.cpp
     AP_SUBGROUPINFO(vtx, "VTX_",  4, AP_Vehicle, AP_VideoTX),
+
+#if HAL_MSP_ENABLED
+    // @Group: MSP
+    // @Path: ../AP_MSP/AP_MSP.cpp
+    AP_SUBGROUPINFO(msp, "MSP",  5, AP_Vehicle, AP_MSP),
+#endif
+
+#if HAL_WITH_FRSKY_TELEM_BIDIRECTIONAL
+    // @Group: FRSKY_
+    // @Path: ../AP_Frsky_Telem/AP_Frsky_Parameters.cpp
+    AP_SUBGROUPINFO(frsky_parameters, "FRSKY_", 6, AP_Vehicle, AP_Frsky_Parameters),
+#endif
 
     AP_GROUPEND
 };
 
 // reference to the vehicle. using AP::vehicle() here does not work on clang
-#if APM_BUILD_TYPE(APM_BUILD_Replay) || APM_BUILD_TYPE(APM_BUILD_UNKNOWN)
+#if APM_BUILD_TYPE(APM_BUILD_UNKNOWN)
 AP_Vehicle& vehicle = *AP_Vehicle::get_singleton();
 #else
 extern AP_Vehicle& vehicle;
@@ -90,8 +102,14 @@ void AP_Vehicle::setup()
     // more than 5ms remaining in your call to hal.scheduler->delay
     hal.scheduler->register_delay_callback(scheduler_delay_callback, 5);
 
+#if HAL_MSP_ENABLED
+    // call MSP init before init_ardupilot to allow for MSP sensors
+    msp.init();
+#endif
+
     // init_ardupilot is where the vehicle does most of its initialisation.
     init_ardupilot();
+    gcs().send_text(MAV_SEVERITY_INFO, "ArduPilot Ready");
 
     // gyro FFT needs to be initialized really late
 #if HAL_GYROFFT_ENABLED
@@ -162,6 +180,11 @@ void AP_Vehicle::get_common_scheduler_tasks(const AP_Scheduler::Task*& tasks, ui
  */
 void AP_Vehicle::scheduler_delay_callback()
 {
+#if APM_BUILD_TYPE(APM_BUILD_Replay)
+    // compass.init() delays, so we end up here.
+    return;
+#endif
+
     static uint32_t last_1hz, last_50hz, last_5s;
 
     AP_Logger &logger = AP::logger();
@@ -236,6 +259,34 @@ void AP_Vehicle::write_notch_log_messages() const
     AP::logger().Write(
         "FTN", "TimeUS,NDn,DnF1,DnF2,DnF3,DnF4", "s-zzzz", "F-----", "QBffff", AP_HAL::micros64(), ins.get_num_gyro_dynamic_notch_center_frequencies(),
             notches[0], notches[1], notches[2], notches[3]);
+}
+
+// reboot the vehicle in an orderly manner, doing various cleanups and
+// flashing LEDs as appropriate
+void AP_Vehicle::reboot(bool hold_in_bootloader)
+{
+    if (should_zero_rc_outputs_on_reboot()) {
+        SRV_Channels::zero_rc_outputs();
+    }
+
+    // Notify might want to blink some LEDs:
+    AP_Notify::flags.firmware_update = 1;
+    notify.update();
+
+    // force safety on
+    hal.rcout->force_safety_on();
+
+    // flush pending parameter writes
+    AP_Param::flush();
+
+    // do not process incoming mavlink messages while we delay:
+    hal.scheduler->register_delay_callback(nullptr, 5);
+
+    // delay to give the ACK a chance to get out, the LEDs to flash,
+    // the IO board safety to be forced on, the parameters to flush, ...
+    hal.scheduler->delay(200);
+
+    hal.scheduler->reboot(hold_in_bootloader);
 }
 
 AP_Vehicle *AP_Vehicle::_singleton = nullptr;
