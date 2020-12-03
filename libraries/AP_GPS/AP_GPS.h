@@ -114,6 +114,7 @@ public:
         GPS_TYPE_UBLOX_RTK_BASE = 17,
         GPS_TYPE_UBLOX_RTK_ROVER = 18,
         GPS_TYPE_MSP = 19,
+        GPS_TYPE_ALLYSTAR = 20, // AllyStar NMEA
     };
 
     /// GPS status codes
@@ -522,6 +523,7 @@ protected:
     AP_Int8 _blend_mask;
     AP_Float _blend_tc;
     AP_Int16 _driver_options;
+    AP_Int8 _primary;
 
 #if GPS_MOVING_BASELINE
     MovingBase mb_params[GPS_MAX_RECEIVERS];
@@ -659,7 +661,8 @@ private:
         NONE        = 0,
         USE_BEST    = 1,
         BLEND       = 2,
-        USE_SECOND  = 3,
+        //USE_SECOND  = 3, deprecated for new primary param
+        USE_PRIMARY_IF_3D_FIX = 4,
     };
 
     // used for flight testing with GPS loss
