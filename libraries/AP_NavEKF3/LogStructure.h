@@ -111,6 +111,9 @@ struct PACKED log_XKF1 {
 // @Field: MX: Magnetic field strength (body X-axis)
 // @Field: MY: Magnetic field strength (body Y-axis)
 // @Field: MZ: Magnetic field strength (body Z-axis)
+// @Field: IDX: Innovation in vehicle drag acceleration (X-axis component)
+// @Field: IDY: Innovation in vehicle drag acceleration (Y-axis component)
+// @Field: IS: Innovation in vehicle sideslip
 struct PACKED log_XKF2 {
     LOG_PACKET_HEADER;
     uint64_t time_us;
@@ -126,6 +129,9 @@ struct PACKED log_XKF2 {
     int16_t magX;
     int16_t magY;
     int16_t magZ;
+    float innovDragX;
+    float innovDragY;
+    float innovSideslip;
 };
 
 
@@ -485,7 +491,7 @@ struct PACKED log_XKY1 {
     { LOG_XKF1_MSG, sizeof(log_XKF1), \
       "XKF1","QBccCfffffffccce","TimeUS,C,Roll,Pitch,Yaw,VN,VE,VD,dPD,PN,PE,PD,GX,GY,GZ,OH", "s#ddhnnnnmmmkkkm", "F-BBB0000000BBBB" }, \
     { LOG_XKF2_MSG, sizeof(log_XKF2), \
-      "XKF2","QBccccchhhhhh","TimeUS,C,AX,AY,AZ,VWN,VWE,MN,ME,MD,MX,MY,MZ", "s#---nnGGGGGG", "F----BBCCCCCC" }, \
+      "XKF2","QBccccchhhhhhfff","TimeUS,C,AX,AY,AZ,VWN,VWE,MN,ME,MD,MX,MY,MZ,IDX,IDY,IS", "s#---nnGGGGGGoor", "F----BBCCCCCC000" }, \
     { LOG_XKF3_MSG, sizeof(log_XKF3), \
       "XKF3","QBcccccchhhccff","TimeUS,C,IVN,IVE,IVD,IPN,IPE,IPD,IMX,IMY,IMZ,IYAW,IVT,RErr,ErSc", "s#nnnmmmGGG??--", "F-BBBBBBCCCBB00" }, \
     { LOG_XKF4_MSG, sizeof(log_XKF4), \
@@ -498,7 +504,7 @@ struct PACKED log_XKY1 {
       "XKFM", "QBBffff", "TimeUS,C,OGNM,GLR,ALR,GDR,ADR", "s------", "F------"}, \
     { LOG_XKFS_MSG, sizeof(log_XKFS), \
       "XKFS","QBBBBB","TimeUS,C,MI,BI,GI,AI", "s#----", "F-----" }, \
-    { LOG_XKQ_MSG, sizeof(log_XKQ), "XKQ", QUAT_FMT, QUAT_LABELS, QUAT_UNITS, QUAT_MULTS }, \
+    { LOG_XKQ_MSG, sizeof(log_XKQ), "XKQ", "QBffff", "TimeUS,C,Q1,Q2,Q3,Q4", "s#????", "F-????" }, \
     { LOG_XKT_MSG, sizeof(log_XKT),   \
       "XKT", "QBIffffffff", "TimeUS,C,Cnt,IMUMin,IMUMax,EKFMin,EKFMax,AngMin,AngMax,VMin,VMax", "s#sssssssss", "F-000000000"}, \
     { LOG_XKTV_MSG, sizeof(log_XKTV),                         \

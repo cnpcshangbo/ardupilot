@@ -482,6 +482,9 @@ void NavEKF3_core::readIMUData()
         float dtNow = constrain_float(0.5f*(imuDataDownSampledNew.delAngDT+imuDataDownSampledNew.delVelDT),0.5f * dtEkfAvg, 2.0f * dtEkfAvg);
         dtEkfAvg = 0.98f * dtEkfAvg + 0.02f * dtNow;
 
+        // do an addtional down sampling for data used to sample XY body frame drag specific forces
+        SampleDragData(imuDataDownSampledNew);
+
         // zero the accumulated IMU data and quaternion
         imuDataDownSampledNew.delAng.zero();
         imuDataDownSampledNew.delVel.zero();
@@ -815,6 +818,7 @@ void NavEKF3_core::readAirSpdData()
     const auto *airspeed = dal.airspeed();
     if (airspeed &&
         airspeed->use(selected_airspeed) &&
+        airspeed->healthy(selected_airspeed) &&
         (airspeed->last_update_ms(selected_airspeed) - timeTasReceived_ms) > frontend->sensorIntervalMin_ms) {
         tasDataNew.tas = airspeed->get_airspeed(selected_airspeed) * dal.get_EAS2TAS();
         timeTasReceived_ms = airspeed->last_update_ms(selected_airspeed);
@@ -957,7 +961,13 @@ void NavEKF3_core::writeEulerYawAngle(float yawAngle, float yawAngleErr, uint32_
 
     yawAngDataNew.yawAng = yawAngle;
     yawAngDataNew.yawAngErr = yawAngleErr;
-    yawAngDataNew.type = type;
+    if (type == 2) {
+        yawAngDataNew.order = rotationOrder::TAIT_BRYAN_321;
+    } else if (type == 1) {
+        yawAngDataNew.order = rotationOrder::TAIT_BRYAN_312;
+    } else {
+        return;
+    }
     yawAngDataNew.time_ms = timeStamp_ms;
 
     storedYawAng.push(yawAngDataNew);
@@ -1036,8 +1046,10 @@ void NavEKF3_core::writeExtNavVelData(const Vector3f &vel, float err, uint32_t t
         return;
     }
 
-    extNavVelMeasTime_ms = timeStamp_ms - delay_ms;
+    extNavVelMeasTime_ms = timeStamp_ms;
     useExtNavVel = true;
+    // calculate timestamp
+    timeStamp_ms = timeStamp_ms - delay_ms;
     // Correct for the average intersampling delay due to the filter updaterate
     timeStamp_ms -= localFilterTimeStep_ms/2;
     // Prevent time delay exceeding age of oldest IMU data in the buffer
@@ -1350,5 +1362,51 @@ void NavEKF3_core::updateMovementCheck(void)
             accel_diff_ratio   : accel_diff_ratio,
         };
         AP::logger().WriteBlock(&pkt, sizeof(pkt));
+    }
+}
+
+void NavEKF3_core::SampleDragData(const imu_elements &imu)
+{
+    // Average and down sample to 5Hz
+    const float bcoef_x = frontend->_ballisticCoef_x;
+    const float bcoef_y = frontend->_ballisticCoef_y;
+    const float mcoef = frontend->_momentumDragCoef.get();
+    const bool using_bcoef_x = bcoef_x > 1.0f;
+    const bool using_bcoef_y = bcoef_y > 1.0f;
+    const bool using_mcoef = mcoef > 0.001f;
+    if (!using_bcoef_x && !using_bcoef_y && !using_mcoef) {
+        // nothing to do
+        dragFusionEnabled = false;
+        return;
+    }
+
+    dragFusionEnabled = true;
+
+    // down-sample the drag specific force data by accumulating and calculating the mean when
+    // sufficient samples have been collected
+
+    dragSampleCount ++;
+
+    // note acceleration is accumulated as a delta velocity
+    dragDownSampled.accelXY.x += imu.delVel.x;
+    dragDownSampled.accelXY.y += imu.delVel.y;
+    dragDownSampled.time_ms += imu.time_ms;
+    dragSampleTimeDelta += imu.delVelDT;
+
+    // calculate and store means from accumulated values
+    if (dragSampleTimeDelta > 0.2f - 0.5f * EKF_TARGET_DT) {
+        // note conversion from accumulated delta velocity to acceleration
+        dragDownSampled.accelXY.x /= dragSampleTimeDelta;
+        dragDownSampled.accelXY.y /= dragSampleTimeDelta;
+        dragDownSampled.time_ms /= dragSampleCount;
+
+        // write to buffer
+        storedDrag.push(dragDownSampled);
+
+        // reset accumulators
+        dragSampleCount = 0;
+        dragDownSampled.accelXY.zero();
+        dragDownSampled.time_ms = 0;
+        dragSampleTimeDelta = 0.0f;
     }
 }

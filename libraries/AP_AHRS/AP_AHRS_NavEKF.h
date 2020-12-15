@@ -83,7 +83,7 @@ public:
     bool get_position(struct Location &loc) const override;
 
     // get latest altitude estimate above ground level in meters and validity flag
-    bool get_hagl(float &hagl) const override;
+    bool get_hagl(float &hagl) const override WARN_IF_UNUSED;
 
     // status reporting of estimated error
     float           get_error_rp() const override;
@@ -95,6 +95,10 @@ public:
     // return an airspeed estimate if available. return true
     // if we have an estimate
     bool airspeed_estimate(float &airspeed_ret) const override;
+
+    // return estimate of true airspeed vector in body frame in m/s
+    // returns false if estimate is unavailable
+    bool airspeed_vector_true(Vector3f &vec) const override;
 
     // true if compass is being used
     bool use_compass() override;

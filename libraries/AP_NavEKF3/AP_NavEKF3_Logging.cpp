@@ -25,7 +25,7 @@ void NavEKF3_core::Log_Write_XKF1(uint64_t time_us) const
     if (!getOriginLLH(originLLH)) {
         originLLH.alt = 0;
     }
-    const struct log_EKF1 pkt{
+    const struct log_XKF1 pkt{
         LOG_PACKET_HEADER_INIT(LOG_XKF1_MSG),
         time_us : time_us,
         core    : DAL_CORE(core_index),
@@ -58,6 +58,9 @@ void NavEKF3_core::Log_Write_XKF2(uint64_t time_us) const
     getWind(wind);
     getMagNED(magNED);
     getMagXYZ(magXYZ);
+    Vector2f dragInnov;
+    float betaInnov = 0;
+    getSynthAirDataInnovations(dragInnov, betaInnov);
     const struct log_XKF2 pkt2{
         LOG_PACKET_HEADER_INIT(LOG_XKF2_MSG),
         time_us : time_us,
@@ -72,7 +75,10 @@ void NavEKF3_core::Log_Write_XKF2(uint64_t time_us) const
         magD    : (int16_t)(magNED.z),
         magX    : (int16_t)(magXYZ.x),
         magY    : (int16_t)(magXYZ.y),
-        magZ    : (int16_t)(magXYZ.z)
+        magZ    : (int16_t)(magXYZ.z),
+        innovDragX    : dragInnov.x,
+        innovDragY    : dragInnov.y,
+        innovSideslip : betaInnov
     };
     AP::logger().WriteBlock(&pkt2, sizeof(pkt2));
 }

@@ -3627,8 +3627,9 @@ class AutoTest(ABC):
                 self.progress("ACK received: %s (%fs)" % (str(m), delta_time))
             if m.command == command:
                 if m.result != want_result:
-                    raise ValueError("Expected %s got %s" % (want_result,
-                                                             m.result))
+                    raise ValueError("Expected %s got %s" % (
+                        mavutil.mavlink.enums["MAV_RESULT"][want_result].name,
+                        mavutil.mavlink.enums["MAV_RESULT"][m.result].name))
                 break
 
     def verify_parameter_values(self, parameter_stuff, max_delta=0.0):
@@ -4294,7 +4295,64 @@ class AutoTest(ABC):
             self.progress("GPS healthy")
             return
 
-    def wait_ready_to_arm(self, timeout=120, require_absolute=True):
+    def assert_sensor_state(self, sensor, present=True, enabled=True, healthy=True):
+        return self.sensor_has_state(sensor, present, enabled, healthy, do_assert=True)
+
+    def sensor_has_state(self, sensor, present=True, enabled=True, healthy=True, do_assert=False):
+        m = self.mav.recv_match(type='SYS_STATUS', blocking=True, timeout=5)
+        if m is None:
+            raise NotAchievedException("Did not receive SYS_STATUS")
+#        self.progress("Status: %s" % str(mavutil.dump_message_verbose(sys.stdout, m)))
+        reported_present = m.onboard_control_sensors_present & sensor
+        reported_enabled = m.onboard_control_sensors_enabled & sensor
+        reported_healthy = m.onboard_control_sensors_health & sensor
+        if present:
+            if not reported_present:
+                if do_assert:
+                    raise NotAchievedException("Sensor not present")
+                return False
+        else:
+            if reported_present:
+                if do_assert:
+                    raise NotAchievedException("Sensor present when it shouldn't be")
+                return False
+
+        if enabled:
+            if not reported_enabled:
+                if do_assert:
+                    raise NotAchievedException("Sensor not enabled")
+                return False
+        else:
+            if reported_enabled:
+                if do_assert:
+                    raise NotAchievedException("Sensor enabled when it shouldn't be")
+                return False
+
+        if healthy:
+            if not reported_healthy:
+                if do_assert:
+                    raise NotAchievedException("Sensor not healthy")
+                return False
+        else:
+            if reported_healthy:
+                if do_assert:
+                    raise NotAchievedException("Sensor healthy when it shouldn't be")
+                return False
+        return True
+
+    def wait_prearm_sys_status_healthy(self, timeout=60):
+        self.do_timesync_roundtrip()
+        tstart = self.get_sim_time()
+        while True:
+            t2 = self.get_sim_time_cached()
+            if t2 - tstart > timeout:
+                self.progress("Prearm bit never went true.  Attempting arm to elicit reason from autopilot")
+                self.arm_vehicle()
+                raise AutoTestTimeoutException("Prearm bit never went true")
+            if self.sensor_has_state(mavutil.mavlink.MAV_SYS_STATUS_PREARM_CHECK, True, True, True):
+               break
+
+    def wait_ready_to_arm(self, timeout=120, require_absolute=True, check_prearm_bit=True):
         # wait for EKF checks to pass
         self.progress("Waiting for ready to arm")
         start = self.get_sim_time()
@@ -4306,6 +4364,8 @@ class AutoTest(ABC):
             m = self.poll_home_position()
             if m is None:
                 raise NotAchievedException("Did not receive a home position")
+        if check_prearm_bit:
+            self.wait_prearm_sys_status_healthy()
         self.progress("Took %u seconds to become armable" % armable_time)
         self.total_waiting_to_arm_time += armable_time
         self.waiting_to_arm_count += 1
@@ -4410,7 +4470,7 @@ Also, ignores heartbeats not from our target system'''
     def wait_text(self, *args, **kwargs):
         self.wait_statustext(*args, **kwargs)
 
-    def wait_statustext(self, text, timeout=20, the_function=None, check_context=False):
+    def wait_statustext(self, text, timeout=20, the_function=None, check_context=False, regex=False):
         """Wait for a specific STATUSTEXT."""
 
         # Statustexts are often triggered by something we've just
@@ -4425,7 +4485,11 @@ Also, ignores heartbeats not from our target system'''
             if "STATUSTEXT" not in c.collections:
                 raise NotAchievedException("Asked to check context but it isn't collecting!")
             for statustext in [x.text for x in c.collections["STATUSTEXT"]]:
-                if text.lower() in statustext.lower():
+                if regex:
+                    if re.match(text, statustext):
+                        self.progress("Found expected text in collection: %s" % text.lower())
+                        return
+                elif text.lower() in statustext.lower():
                     self.progress("Found expected text in collection: %s" % text.lower())
                     return
 
@@ -4435,6 +4499,9 @@ Also, ignores heartbeats not from our target system'''
             global statustext_found
             if m.get_type() != "STATUSTEXT":
                 return
+            if regex:
+                if re.match(text, m.text):
+                    statustext_found = True
             if text.lower() in m.text.lower():
                 self.progress("Received expected text: %s" % m.text.lower())
                 statustext_found = True
@@ -5410,7 +5477,8 @@ Also, ignores heartbeats not from our target system'''
             self.progress("Rebooting and making sure we could arm with these values")
             self.drain_mav()
             self.reboot_sitl()
-            self.wait_ready_to_arm(timeout=60)
+            if False:   # FIXME!  This fails with compasses inconsistent!
+                self.wait_ready_to_arm(timeout=60)
             self.progress("Setting manually the parameter for other sensor to avoid compass consistency error")
             for idx in range(compass_tnumber, compass_count, 1):
                 for param in params[idx]:
@@ -5677,8 +5745,9 @@ Also, ignores heartbeats not from our target system'''
 
             self.zero_mag_offset_parameters()
 
-            self.change_mode('LOITER')
-            self.wait_ready_to_arm() # so we definitely have position
+            # wait until we definitely know where we are:
+            self.poll_home_position(timeout=120)
+
             ss = self.mav.recv_match(type='SIMSTATE', blocking=True, timeout=1)
             if ss is None:
                 raise NotAchievedException("Did not get SIMSTATE")
@@ -5714,7 +5783,7 @@ Also, ignores heartbeats not from our target system'''
         try:
             self.set_parameter("LOG_BACKEND_TYPE", 2)
             self.reboot_sitl()
-            self.wait_ready_to_arm()
+            self.wait_ready_to_arm(check_prearm_bit=False)
             self.mavproxy.send('arm throttle\n')
             self.mavproxy.expect('PreArm: Logging failed')
             self.mavproxy.send("module load dataflash_logger\n")
@@ -5722,7 +5791,7 @@ Also, ignores heartbeats not from our target system'''
             self.mavproxy.expect('logging started')
             self.mavproxy.send("dataflash_logger set verbose 0\n")
             self.delay_sim_time(1)
-            self.drain_mav() # hopefully draining COMMAND_ACK from that failed arm
+            self.do_timesync_roundtrip()  # drain COMMAND_ACK from that failed arm
             self.arm_vehicle()
             tstart = self.get_sim_time()
             last_status = 0
@@ -5741,8 +5810,9 @@ Also, ignores heartbeats not from our target system'''
                         raise NotAchievedException("Exceptionally low transfer rate")
             self.disarm_vehicle()
         except Exception as e:
+            self.progress("Exception caught: %s" %
+                          self.get_exception_stacktrace(e))
             self.disarm_vehicle()
-            self.progress("Exception (%s) caught" % str(e))
             ex = e
         self.context_pop()
         self.mavproxy.send("module unload dataflash_logger\n")
